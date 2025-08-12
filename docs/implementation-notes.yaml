@@ -1,0 +1,276 @@
+# Interior AI Frontend - 実装ノート
+
+## 完了したタスク
+- ✅ Vue 3 + TypeScript + Vite プロジェクトの初期設定
+- ✅ Pinia ストアの実装（interior.ts）
+- ✅ Vue Router の設定
+- ✅ メインコンポーネント（HomeView.vue）の実装
+- ✅ 画像アップロード機能（ドラッグ&ドロップ対応）
+- ✅ テイスト選択機能
+- ✅ プログレスバー表示
+- ✅ 結果ギャラリー表示
+- ✅ モーダルプレビュー機能
+- ✅ エラーハンドリング
+- ✅ レスポンシブデザイン
+- ✅ 利用規約同意チェックボックス
+- ✅ モック機能の実装（バックエンドエラー回避）
+
+## API連携
+- ✅ 既存APIエンドポイント `/api/imageMake` との連携
+- ✅ 明示的なAPI URL指定（http://localhost:3000）
+- ✅ タイムアウト設定（30秒）
+- ✅ エラーレスポンス処理
+- ✅ バックエンド仕様に合わせたリクエスト形式調整
+- ✅ FormData形式での画像アップロード
+- ✅ バックエンドレスポンス形式への対応
+- ✅ CORS設定の追加
+- ✅ 環境変数による設定管理
+
+## API部分のロジック解析と原因分析
+
+### 現在の問題点
+1. **500 Internal Server Error** - バックエンドで内部エラーが発生
+2. **リクエスト形式の不整合** - フロントエンドとバックエンドの期待するデータ形式が異なる
+3. **設定ファイルの矛盾** - CORS_CONFIGでContent-Typeが不正確
+
+### 根本原因
+1. **データ形式の不整合**
+   - フロントエンド: Base64画像データをJSONで送信
+   - バックエンド: ファイルパスを期待している可能性
+   - 結果: バックエンドでファイルが見つからず500エラー
+
+2. **プロキシ設定の問題**
+   - Viteプロキシ: `/api` → `http://localhost:3000`
+   - 実際のエンドポイント: `/api/imageMake`
+   - 問題: バックエンドが`/api/imageMake`エンドポイントを正しく処理していない可能性
+
+3. **レスポンス形式の不整合**
+   - フロントエンドが期待: `{ result: string, error?: string }`
+   - バックエンドが返す可能性: `{ result: "ファイルパス" }` または `{ error: "エラーメッセージ" }`
+
+### 修正済み項目
+- ✅ CORS_CONFIGのContent-Typeを`application/json`に修正
+- ✅ エラーハンドリングの強化（500エラー専用処理追加）
+- ✅ リクエスト形式の選択肢を追加（JSON形式とFormData形式）
+- ✅ モックモードを無効化
+- ✅ API URLを相対パスに変更（/api/imageMake）
+- ✅ Viteプロキシ設定を有効化（CORS問題回避）
+- ✅ 詳細なエラーログ出力の追加
+- ✅ バックエンドレスポンス形式の不一致を修正
+  - JSONレスポンス（{ result: "テキスト", error: "エラーメッセージ" }）に対応
+  - 画像ファイルダウンロードレスポンスに対応
+  - Content-Typeに基づく自動判定
+- ✅ エラーレスポンスの改善（Blob形式のエラーハンドリング）
+
+### 未解決の問題
+- ❌ バックエンドの500エラーの根本原因
+- ❌ バックエンドAPIの正確な仕様確認
+- ❌ 実際のAPI連携テスト
+- ❌ CORS設定（バックエンド側）
+
+## 技術的考慮事項
+- TypeScript strict mode での型安全性確保
+- API仕様との整合性確保
+- セキュリティ考慮（画像アップロード、APIキー管理）
+- パフォーマンス最適化（画像圧縮、キャッシュ）
+
+## 未実装項目
+- 画像保存機能
+- SNSシェア機能
+- 利用規約モーダル
+- エラーリトライ機能
+- ローディングアニメーション
+- 画像プレビュー機能の改善
+
+## 競合分析
+- 類似サービスの機能比較
+- UI/UXの差別化ポイント
+- 技術スタックの最適化
+
+## 今後の改善点
+- バックエンドAPIとの完全な連携
+- エラーハンドリングの更なる強化
+- ユーザビリティの向上
+- パフォーマンスの最適化 
+
+---
+# 失敗と対応（YAMLログ）
+failures:
+  - id: F-2025-08-09-001
+    when: 2025-08-09T00:00:00Z
+    description: ルーターエントリ欠如により `import './router'` 解決不能
+    files:
+      - src/main.ts
+      - src/router/
+    fix:
+      summary: `src/router/index.ts` を新規作成し、`/` に `HomeView.vue` を割り当て
+      changes:
+        - add: src/router/index.ts
+  - id: F-2025-08-09-002
+    when: 2025-08-09T00:00:00Z
+    description: `./style.css` が存在せず起動時に解決不能
+    files:
+      - src/style.css
+      - src/main.ts
+    fix:
+      summary: ベーススタイル `src/style.css` を追加
+      changes:
+        - add: src/style.css
+  - id: F-2025-08-09-003
+    when: 2025-08-09T00:00:00Z
+    description: `<script setup>` で `$refs` を直接参照して実行時エラーの可能性
+    files:
+      - src/views/HomeView.vue
+    fix:
+      summary: `triggerFileSelect` メソッドを追加し `ref` 経由でクリック、`fileInput` の型を厳格化
+      changes:
+        - update: src/views/HomeView.vue
+  - id: F-2025-08-09-004
+    when: 2025-08-09T00:00:00Z
+    description: 未使用インポート `CORS_CONFIG` により型チェック/リントでエラーの可能性
+    files:
+      - src/stores/interior.ts
+    fix:
+      summary: 未使用インポートを削除
+      changes:
+        - update: src/stores/interior.ts
+  - id: F-2025-08-09-005
+    when: 2025-08-09T00:00:00Z
+    description: バックエンドが500を返却し、JSON送信だけでは互換性がない
+    files:
+      - src/stores/interior.ts
+    fix:
+      summary: JSON送信失敗時にFormDataへ自動フォールバックするリトライを実装
+      changes:
+        - update: src/stores/interior.ts
+  - id: F-2025-08-09-006
+    when: 2025-08-09T00:00:00Z
+    description: バックエンドが `imagePath`（サーバー上の既存ファイルパス）を要求する仕様で、Base64送信では常時500
+    files:
+      - src/config/api.ts
+      - src/stores/interior.ts
+    fix:
+      summary: 環境変数で `EXPECTS_IMAGE_PATH` を切替可能にし、デフォルトで `images/sample.png` を送る実装に変更
+      changes:
+        - update: src/config/api.ts
+        - update: src/stores/interior.ts
+  - id: F-2025-08-09-007
+    when: 2025-08-11T00:00:00Z
+    description: VITE_API_EXPECTS_PATH=false 設定時でも Base64 検知で常にサーバー画像パスへ切替されてしまう
+    files:
+      - src/stores/interior.ts
+    fix:
+      summary: useServerPath の判定を expectsImagePath のみ参照するように修正（OR 条件を撤廃）
+      changes:
+        - update: src/stores/interior.ts
+  - id: F-2025-08-11-008
+    when: 2025-08-11T00:10:00Z
+    description: バックエンドの受け口差異により FormData では imagePath か image のどちらかを期待するため 500 が継続
+    files:
+      - src/stores/interior.ts
+    fix:
+      summary: 互換性確保のため FormData に `imagePath` を常に付与し、expectsImagePath=false のときは `image` も同梱
+      changes:
+        - update: src/stores/interior.ts
+  - id: F-2025-08-11-009
+    when: 2025-08-11T00:20:00Z
+    description: バックエンド仕様が JSON { imagePath, prompt } 固定のため、FormData リトライは不要
+    files:
+      - src/stores/interior.ts
+    fix:
+      summary: EXPECTS_IMAGE_PATH=true のときは JSON エラー時に FormData 再試行を行わず即時エラーを返すよう変更
+      changes:
+        - update: src/stores/interior.ts
+  - id: F-2025-08-11-010
+    when: 2025-08-11T00:30:00Z
+    description: imagePath が .jpg のときにサーバーが 500 を返す（.png のみ受理）
+    files:
+      - src/stores/interior.ts
+    fix:
+      summary: imagePath が .jpg の場合は .png に自動フォールバックして再試行
+      changes:
+        - update: src/stores/interior.ts
+  - id: F-2025-08-11-011
+    when: 2025-08-11T00:40:00Z
+    description: バックエンドがアップロード対応したため、FormData で `image`/`file` を送る形に統一
+    files:
+      - src/stores/interior.ts
+    fix:
+      summary: FormData から `imagePath` を除去し、`image` と `file` の両方のキーで Blob を送信
+      changes:
+        - update: src/stores/interior.ts
+  - id: F-2025-08-11-012
+    when: 2025-08-11T00:50:00Z
+    description: JSON で Base64 を受け付けるバックエンドにも対応するため、imageBase64 を送る分岐を追加
+    files:
+      - src/stores/interior.ts
+    fix:
+      summary: EXPECTS_IMAGE_PATH=false のとき JSON ボディを `{ imageBase64, prompt }` に切替
+      changes:
+        - update: src/stores/interior.ts
+  - id: F-2025-08-11-013
+    when: 2025-08-11T01:05:00Z
+    description: バックエンドに `/api/upload` が追加されている前提で、フロントはアップロード→imageMake の二段階連携に変更
+    files:
+      - src/config/api.ts
+      - src/stores/interior.ts
+    fix:
+      summary: アップロードAPIを呼び出し、返却された filename を `imagePath` として `/api/imageMake` に渡す実装へ
+      changes:
+        - update: src/config/api.ts
+        - update: src/stores/interior.ts
+  - id: F-2025-08-12-014
+    when: 2025-08-12T00:00:00Z
+    description: テイスト選択から家具チェックボックス選択への仕様変更
+    files:
+      - src/views/HomeView.vue
+      - src/stores/interior.ts
+      - docs/design.md
+    fix:
+      summary: リクエスト型を `furniture: string[]` に変更し、家具リストからプロンプト生成するよう更新
+      changes:
+        - update: src/views/HomeView.vue
+        - update: src/stores/interior.ts
+        - update: docs/design.md
+  - id: F-2025-08-12-015
+    when: 2025-08-12T00:20:00Z
+    description: サムネイルのキャプションが画像横幅と揃わず、視認性が低下
+    files:
+      - src/views/HomeView.vue
+    fix:
+      summary: `.gallery-card` 構造を導入し、`.gallery-caption` の幅を100%に統一
+      changes:
+        - update: src/views/HomeView.vue
+  - id: F-2025-08-12-016
+    when: 2025-08-12T00:40:00Z
+    description: 元画像の実寸に基づいて家具スケールを合わせ、生成画像に文字を入れない要件
+    files:
+      - src/views/HomeView.vue
+      - src/stores/interior.ts
+    fix:
+      summary: 元画像の naturalWidth/Height を取得してストアに渡し、プロンプトに寸法/テキスト非表示の指示を追加
+      changes:
+        - update: src/views/HomeView.vue
+        - update: src/stores/interior.ts
+  - id: F-2025-08-12-017
+    when: 2025-08-12T00:55:00Z
+    description: 置けなかった家具の通知や網羅配置の要件に対応するため、フロントで通知表示フィールドを追加
+    files:
+      - src/stores/interior.ts
+      - src/views/HomeView.vue
+    fix:
+      summary: ストアに `notice`/`notPlaced` を追加し、JSON応答の `notPlaced`/`report` を表示
+      changes:
+        - update: src/stores/interior.ts
+        - update: src/views/HomeView.vue
+
+conflict_check:
+  date: 2025-08-09T00:00:00Z
+  added_files:
+    - src/router/index.ts
+    - src/style.css
+  analysis:
+    - alias '@/': `vite.config.ts` の設定に一致、競合なし
+    - ルート `/` は未定義だったため上書き競合なし
+    - グローバルCSSの新規追加は既存と重複なし
+  result: no_conflicts
