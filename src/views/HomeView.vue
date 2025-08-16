@@ -34,9 +34,35 @@
       </div>
       
       <div class="taste-selection" v-if="selectedImage">
-        <h3>配置したい家具を選択</h3>
+        <h3>生成設定</h3>
+        <div class="gen-controls">
+          <div class="control-row">
+            <label class="control-label">モード</label>
+            <div class="control-field">
+              <label><input type="radio" value="auto" v-model="mode" /> 自動</label>
+              <label style="margin-left:1rem;"><input type="radio" value="manual" v-model="mode" /> 手動（家具固定）</label>
+            </div>
+          </div>
+          <div class="control-row">
+            <label class="control-label">部屋の種類</label>
+            <div class="control-field">
+              <label><input type="radio" value="リビング" v-model="roomTypeHint" /> リビング</label>
+              <label style="margin-left:1rem;"><input type="radio" value="寝室" v-model="roomTypeHint" /> 寝室</label>
+              <label style="margin-left:1rem;"><input type="radio" value="キッチン" v-model="roomTypeHint" /> キッチン</label>
+            </div>
+          </div>
+          <div class="control-row">
+            <label class="control-label">バリエーション数</label>
+            <div class="control-field">
+              <input class="num-input" type="number" min="1" max="3" v-model.number="numVariations" />
+              <span class="hint">（1〜3）</span>
+            </div>
+          </div>
+        </div>
+
+        <h3 v-if="mode === 'manual'">配置したい家具を選択</h3>
         <div class="taste-options">
-          <label v-for="item in furnitureOptions" :key="item.name" class="taste-option">
+          <label v-for="item in furnitureOptions" :key="item.name" class="taste-option" v-if="mode === 'manual'">
             <input 
               type="checkbox"
               :value="item.name"
@@ -44,7 +70,7 @@
             />
             <span class="taste-label">{{ item.name }}</span>
             <select 
-              v-if="selectedFurniture.includes(item.name)"
+              v-if="mode === 'manual' && selectedFurniture.includes(item.name)"
               class="detail-select"
               v-model="furnitureDetails[item.name]"
             >
@@ -67,7 +93,7 @@
           @click="generateInterior"
         >
           <span v-if="isGenerating">生成中...</span>
-          <span v-else>インテリアプランを生成</span>
+          <span v-else>インテリア画像を生成</span>
         </button>
       </div>
     </div>
@@ -82,7 +108,7 @@
     
     <!-- 結果表示 -->
       <div v-if="results.length > 0" class="results-section">
-        <h2>生成されたインテリアプラン</h2>
+        <h2>生成されたインテリア画像</h2>
         <div class="gallery">
           <div 
             v-for="(result, index) in results" 
@@ -90,10 +116,10 @@
             class="gallery-card"
           >
             <div class="gallery-image" @click="openModal(result)">
-              <img :src="result.image" :alt="result.description" />
+              <img :src="result.image" alt="" />
             </div>
             <div class="gallery-caption">
-              <h4 class="gallery-title">{{ result.description }}</h4>
+              
               <div class="gallery-actions">
                 <button class="btn btn-secondary" @click.stop="downloadImage(result)">保存</button>
                 <button class="btn btn-secondary" @click.stop="shareImage(result)">シェア</button>
@@ -118,9 +144,8 @@
     <div v-if="selectedResult" class="modal" @click="closeModal">
       <div class="modal-content" @click.stop>
         <button class="modal-close" @click="closeModal">&times;</button>
-        <img :src="selectedResult.image" :alt="selectedResult.description" />
+        <img :src="selectedResult.image" alt="" />
         <div class="modal-info">
-          <h3>{{ selectedResult.description }}</h3>
           <div class="modal-actions">
             <button class="btn" @click="downloadImage(selectedResult)">
               画像を保存
@@ -155,6 +180,9 @@ const interiorStore = useInteriorStore()
 const selectedImage = ref<string>('')
 const selectedFurniture = ref<string[]>([])
 const furnitureDetails = ref<Record<string, string>>({})
+const mode = ref<'auto' | 'manual'>('auto')
+const roomTypeHint = ref<string>('')
+const numVariations = ref<number>(2)
 const agreedToTerms = ref(false)
 const isGenerating = ref(false)
 const isDragOver = ref(false)
@@ -182,7 +210,9 @@ const furnitureOptions = [
 
 // 生成ボタンの活性制御
 const canGenerate = computed(() => {
-  return Boolean(selectedImage.value) && agreedToTerms.value && !isGenerating.value && selectedFurniture.value.length > 0
+  const hasImage = Boolean(selectedImage.value)
+  const manualOk = mode.value === 'auto' || selectedFurniture.value.length > 0
+  return hasImage && agreedToTerms.value && !isGenerating.value && manualOk
 })
 
 // ファイル選択（`<input type="file">`）での読み込み
@@ -264,7 +294,10 @@ const generateInterior = async () => {
       image: selectedImage.value,
       furniture: furnitureWithDetails,
       imageWidth: imageWidth.value,
-      imageHeight: imageHeight.value
+      imageHeight: imageHeight.value,
+      mode: mode.value,
+      roomTypeHint: roomTypeHint.value,
+      numVariations: numVariations.value
     })
     
     clearInterval(progressInterval)

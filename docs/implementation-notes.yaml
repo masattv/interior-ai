@@ -264,6 +264,48 @@ failures:
         - update: src/stores/interior.ts
         - update: src/views/HomeView.vue
 
+  - id: F-2025-08-16-018
+    when: 2025-08-16T00:00:00Z
+    description: 画像生成プロンプトを新仕様（役割/出力ルール/部屋情報/家具ルール/禁止事項/指示）に刷新
+    files:
+      - src/stores/interior.ts
+      - src/views/HomeView.vue
+    fix:
+      summary: generatePromptFromFurniture に mode/roomTypeHint/numVariations を追加し、UI に対応項目を追加
+      changes:
+        - update: src/stores/interior.ts
+        - update: src/views/HomeView.vue
+
+conflict_check:
+  date: 2025-08-16T00:00:00Z
+  added_files: []
+  analysis:
+    - 既存の関数名・エクスポートは維持。引数オプション追加は既存呼び出し箇所（HomeView）を同時更新済み。
+    - UIは既存ブロックを書き換えたが、クラス名/スタイルを流用しているためCSS衝突なし。
+  result: no_conflicts
+
+documentation_updates:
+  - id: DOC-2025-08-15-001
+    when: 2025-08-15T00:00:00Z
+    description: 基本設計・詳細設計ドキュメントを追加し、図を作成
+    files:
+      - docs/basic-design.md
+      - docs/detail-design.md
+    diagrams:
+      - type: mermaid
+        title: 全体アーキテクチャ
+        location: message
+      - type: mermaid
+        title: 生成処理シーケンス
+        location: message
+    impact:
+      - 設計の可視化により、保守/拡張方針の合意形成を容易化
+    conflicts_check:
+      analysis:
+        - 既存ドキュメントとファイル名重複なし（新規）
+        - 参照先コード（`src/*`）の構成に変更なし
+      result: no_conflicts
+
 conflict_check:
   date: 2025-08-09T00:00:00Z
   added_files:

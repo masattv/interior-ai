@@ -14,6 +14,9 @@ interface InteriorRequest {
   furniture: string[]
   imageWidth?: number
   imageHeight?: number
+  mode?: 'auto' | 'manual'
+  roomTypeHint?: string
+  numVariations?: number
 }
 
 interface InteriorResult {
@@ -64,7 +67,16 @@ export const useInteriorStore = defineStore('interior', {
       try {
         // プロキシ経由でAPIを呼び出し
         const apiUrl = API_CONFIG.ENDPOINTS.IMAGE_MAKE
-        const prompt = this.generatePromptFromFurniture(request.furniture, request.imageWidth, request.imageHeight)
+        const prompt = this.generatePromptFromFurniture(
+          request.furniture,
+          request.imageWidth,
+          request.imageHeight,
+          {
+            mode: request.mode,
+            roomTypeHint: request.roomTypeHint,
+            numVariations: request.numVariations,
+          }
+        )
         const expectsImagePath = API_CONFIG.EXPECTS_IMAGE_PATH
 
         console.log('API呼び出し開始:', {
@@ -73,11 +85,11 @@ export const useInteriorStore = defineStore('interior', {
           imageSize: request.image.length
         })
 
-        const postJson = async () => {
+        const postJson = async (promptArg: string) => {
           // 期待に応じて JSON 送信の形を分岐
           const requestData = expectsImagePath
-            ? { imagePath: API_CONFIG.FALLBACK_IMAGE_PATH, prompt }
-            : { imageBase64: request.image, prompt }
+            ? { imagePath: API_CONFIG.FALLBACK_IMAGE_PATH, prompt: promptArg }
+            : { imageBase64: request.image, prompt: promptArg }
 
           console.log('JSON送信:', {
             expectsImagePath,
@@ -91,10 +103,10 @@ export const useInteriorStore = defineStore('interior', {
           })
         }
 
-        const postFormDataWithField = async (fieldName: string) => {
+        const postFormDataWithField = async (fieldName: string, promptArg: string) => {
           const blob = await this.base64ToBlob(request.image)
           const formData = new FormData()
-          formData.append('prompt', prompt)
+          formData.append('prompt', promptArg)
           // 元画像のMIMEに合わせて拡張子を調整
           const mime = blob.type || 'image/png'
           const ext = mime.includes('jpeg') ? 'jpg' : mime.split('/')[1] || 'png'
@@ -129,7 +141,7 @@ export const useInteriorStore = defineStore('interior', {
             const results: InteriorResult[] = [
               {
                 image: resultImage.startsWith('data:') ? resultImage : `data:image/jpeg;base64,${resultImage}`,
-                description: `${prompt} - 生成されたデザイン`
+                description: '生成されたデザイン'
               }
             ]
             if (jsonData.notPlaced?.length) {
@@ -138,84 +150,86 @@ export const useInteriorStore = defineStore('interior', {
             } else if (jsonData.report) {
               this.notice = jsonData.report
             }
-            this.results = results
             return results
           }
           if (contentType.includes('image/')) {
             const blob: Blob = response.data
             const imageUrl = URL.createObjectURL(blob)
             const results: InteriorResult[] = [
-              { image: imageUrl, description: `${prompt} - 生成されたデザイン` }
+              { image: imageUrl, description: '生成されたデザイン' }
             ]
-            this.results = results
             return results
           }
           console.error('予期しないレスポンス形式:', contentType)
           throw new Error('予期しないレスポンス形式です')
         }
 
-        // まずは JSON で送信
-        try {
-          const response = await postJson()
-          return await handleResponse(response)
-        } catch (jsonErr: any) {
-          // バックエンド仕様が imagePath(JSON) 固定の場合は FormData リトライせずエラーを返す
-          if (expectsImagePath) {
-            const currentPath = API_CONFIG.FALLBACK_IMAGE_PATH
-            const pngFallbackPath = currentPath.replace(/\.jpe?g$/i, '.png')
-            // .jpg 指定時のみ .png に自動フォールバック（READMEの例に準拠）
-            if (pngFallbackPath !== currentPath) {
-              console.warn('JSON送信失敗。imagePath を .jpg -> .png に切り替えて再試行します。', {
-                status: axios.isAxiosError(jsonErr) ? jsonErr.response?.status : undefined,
-                from: currentPath,
-                to: pngFallbackPath,
-              })
-              const requestData = { imagePath: pngFallbackPath, prompt }
-              const response = await axios.post(apiUrl, requestData, {
-                headers: { 'Content-Type': 'application/json' },
-                timeout: API_CONFIG.TIMEOUT,
-                responseType: 'blob',
-              })
-              return await handleResponse(response)
+        const runOne = async (promptArg: string): Promise<InteriorResult[]> => {
+          // 1) まずは Upload → imageMake（ユーザー画像を確実に使用）
+          try {
+            const uploadRes = await postFormDataWithField('file', promptArg)
+            const text = await (uploadRes.data as Blob).text()
+            const data = JSON.parse(text)
+            if (!data?.filename) {
+              throw new Error('Upload API did not return filename')
             }
-            console.error('JSON送信失敗（imagePath要求モード）', {
-              status: axios.isAxiosError(jsonErr) ? jsonErr.response?.status : undefined,
-              message: (jsonErr as Error).message,
+            const imagePath = `images/${data.filename}`
+            const imageMakeRes = await axios.post(apiUrl, { imagePath, prompt: promptArg }, {
+              headers: { 'Content-Type': 'application/json' },
+              timeout: API_CONFIG.TIMEOUT,
+              responseType: 'blob',
             })
-            throw jsonErr
-          }
-          // それ以外は FormData で再試行（まず 'image'、失敗なら 'file'）
-          if (axios.isAxiosError(jsonErr)) {
-            console.warn('JSON送信失敗。FormData(image)で再試行します。', {
-              status: jsonErr.response?.status,
-              message: jsonErr.message,
+            return await handleResponse(imageMakeRes)
+          } catch (uploadErr: any) {
+            console.warn('Upload 経由での生成に失敗。フォールバックを試行します。', {
+              status: axios.isAxiosError(uploadErr) ? uploadErr.response?.status : undefined,
+              message: (uploadErr as Error).message,
             })
-            try {
-              // 1) まず /api/upload にアップロード
-              const uploadRes = await postFormDataWithField('file')
-              const text = await (uploadRes.data as Blob).text()
-              const data = JSON.parse(text)
-              if (!data?.filename) {
-                throw new Error('Upload API did not return filename')
+            // 2) expectsImagePath=true: サーバー既存画像パスでJSON直送
+            if (expectsImagePath) {
+              try {
+                const currentPath = API_CONFIG.FALLBACK_IMAGE_PATH
+                const response = await axios.post(apiUrl, { imagePath: currentPath, prompt: promptArg }, {
+                  headers: { 'Content-Type': 'application/json' },
+                  timeout: API_CONFIG.TIMEOUT,
+                  responseType: 'blob',
+                })
+                return await handleResponse(response)
+              } catch (e) {
+                // jpg→png 自動切替
+                const currentPath = API_CONFIG.FALLBACK_IMAGE_PATH
+                const pngFallbackPath = currentPath.replace(/\.jpe?g$/i, '.png')
+                if (pngFallbackPath !== currentPath) {
+                  const response = await axios.post(apiUrl, { imagePath: pngFallbackPath, prompt: promptArg }, {
+                    headers: { 'Content-Type': 'application/json' },
+                    timeout: API_CONFIG.TIMEOUT,
+                    responseType: 'blob',
+                  })
+                  return await handleResponse(response)
+                }
+                throw e
               }
-              // 2) アップロード後のファイルを imageMake に渡す
-              const imagePath = `images/${data.filename}`
-              const imageMakeRes = await axios.post(apiUrl, { imagePath, prompt }, {
-                headers: { 'Content-Type': 'application/json' },
-                timeout: API_CONFIG.TIMEOUT,
-                responseType: 'blob',
-              })
-              return await handleResponse(imageMakeRes)
-            } catch (fdErr: any) {
-              console.error('アップロード→imageMake 連携に失敗', {
-                status: axios.isAxiosError(fdErr) ? fdErr.response?.status : undefined,
-                message: (fdErr as Error).message,
-              })
-              throw fdErr
             }
+            // 3) それ以外は Base64 JSON 直送
+            const response = await postJson(promptArg)
+            return await handleResponse(response)
           }
-          throw jsonErr
         }
+
+        const num = Math.min(3, Math.max(1, Number(request.numVariations ?? 1)))
+        const aggregated: InteriorResult[] = []
+        // サーバー側の同時実行制限を考慮し逐次生成
+        for (let i = 1; i <= num; i++) {
+          const promptForCall = `${prompt}\n（バリエーション ${i}）`
+          try {
+            const one = await runOne(promptForCall)
+            aggregated.push(...one)
+          } catch (e) {
+            console.warn('1件の生成に失敗しました（継続します）', e)
+          }
+        }
+        this.results = aggregated
+        return aggregated
 
       } catch (error) {
         this.apiCallCount-- // エラー時はカウントを戻す
@@ -293,12 +307,61 @@ export const useInteriorStore = defineStore('interior', {
       }
     },
 
-    generatePromptFromFurniture(furniture: string[], imageWidth?: number, imageHeight?: number): string {
-      const sizePart = imageWidth && imageHeight ? `元画像サイズは幅${imageWidth}px×高さ${imageHeight}pxです。` : ''
-      const basePrompt = `${sizePart}現在の写真に合う家具を適切に配置してください。各家具は一般的な寸法を想定し、スケール感を一致させてください。生成画像には文字やテキストを入れないでください。`
-      if (!Array.isArray(furniture) || furniture.length === 0) return basePrompt
-      const list = furniture.map((f) => `「${f}」`).join('、')
-      return `${basePrompt}配置対象は${list}です。`
+    generatePromptFromFurniture(
+      furniture: string[],
+      imageWidth?: number,
+      imageHeight?: number,
+      options?: { mode?: 'auto' | 'manual'; roomTypeHint?: string; numVariations?: number }
+    ): string {
+      const widthText = typeof imageWidth === 'number' && imageWidth > 0 ? `${imageWidth}` : '不明'
+      const heightText = typeof imageHeight === 'number' && imageHeight > 0 ? `${imageHeight}` : '不明'
+      const sizeLine = `幅${widthText}px × 高さ${heightText}px`
+      const roomTypeHint = (options?.roomTypeHint || '').trim() || '未指定'
+      const mode = options?.mode || 'auto'
+      const numVariationsRaw = options?.numVariations ?? 2
+      const numVariations = Math.min(3, Math.max(1, Number(numVariationsRaw) || 2))
+
+      let manualBlock = ''
+      if (mode === 'manual' && Array.isArray(furniture) && furniture.length > 0) {
+        const list = furniture.map((f) => `「${f}」`).join('、 ')
+        manualBlock = `- 手動配置モード。以下の家具のみを使用し、新規追加しないこと。\n- 許可家具: ${list}`
+      }
+
+      const prompt = [
+        '【役割】',
+        'あなたはインテリアスタイリストです。与えられた部屋写真をもとに、',
+        '「ビフォーアフターのアフター」にあたる写実的な完成イメージを生成してください。',
+        '',
+        '【出力ルール】',
+        '- 出力は画像のみ。テキスト、透かし、ラベル、キャプションを画像に含めないこと。',
+        '- カメラの視点、壁の位置、窓や建築的な固定要素は維持すること（構図や壁・床の材質/色は変更しない）。',
+        '- 家具のサイズ感は現実的に。小規模〜中規模の日本の住居に収まるスケールを守ること。',
+        '- 通路は可能な限り60cm以上確保し、ドアや窓をふさがないこと。',
+        '- 光は自然で柔らかく、素材感も写実的に表現すること。',
+        '',
+        '【部屋情報】',
+        `画像サイズ: ${sizeLine}`,
+        `部屋の種類: ${roomTypeHint}    // 例: リビング / 寝室 / キッチン（単語のみ）`,
+        '',
+        '【家具ルール】',
+        manualBlock,
+        `- 家具ルールが指定されていない場合は、自動配置モードとし、部屋の種類（${roomTypeHint}）に基づいて適切な家具を選んで配置してください。`,
+        '',
+        '【禁止事項】',
+        '- 部屋の広さを誇張したり、非現実的な拡張を行ってはいけません。',
+        '- 窓や扉をふさぐような配置は禁止します。',
+        '- 壁や床の素材・色、構図、カメラの視点を変更してはいけません。',
+        '- 人物や動物を追加してはいけません。',
+        '',
+        '【指示】',
+        `上記条件に従って、${numVariations}種類（${numVariations}枚）の異なるレイアウトを生成してください（1〜3の範囲）。`,
+        '各案は色合いや家具の配置にバリエーションを持たせ、スケール感を崩さないこと。',
+        '画像内にテキストを入れないこと。'
+      ]
+        .filter((line) => line !== '')
+        .join('\n')
+
+      return prompt
     },
 
     clearResults() {
