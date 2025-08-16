@@ -305,6 +305,19 @@ documentation_updates:
         - 既存ドキュメントとファイル名重複なし（新規）
         - 参照先コード（`src/*`）の構成に変更なし
       result: no_conflicts
+  - id: DOC-2025-08-16-002
+    when: 2025-08-16T00:30:00Z
+    description: 本番と開発で API ベースURLを切替できるよう設定を更新
+    files:
+      - src/config/api.ts
+      - vite.config.ts
+    impact:
+      - 本番デプロイ時に `VITE_API_BASE_URL=https://api.example.com` を指定するだけで接続先が切替
+      - 開発では未設定でも `/api` 相対でプロキシが機能
+    conflicts_check:
+      analysis:
+        - 既存の相対呼び出し（/api/...）はそのまま。ランタイム側でベースURLは未使用のため影響なし
+      result: no_conflicts
 
 conflict_check:
   date: 2025-08-09T00:00:00Z

@@ -11,12 +11,16 @@ export default defineConfig({
   },
   server: {
     port: 3001,
-    proxy: {
-      '/api': {
-        target: 'http://localhost:3000',
-        changeOrigin: true,
-        secure: false,
-      },
-    },
+    // 開発時は /api をローカル or 環境変数の API へプロキシ。
+    proxy: (() => {
+      const target = process.env.VITE_API_BASE_URL || 'http://localhost:3000'
+      return {
+        '/api': {
+          target,
+          changeOrigin: true,
+          secure: false,
+        },
+      }
+    })(),
   },
 })
